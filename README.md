@@ -86,7 +86,150 @@ decide:
 Does the itext2kg logic require specific Gemini 3.1 "thinking" features (like controlled reasoning depth), or is the standard response output sufficient for  graph construction?
 
 
+# Step by step implementation guide 
 
+## Phase 1: Environment & Dependency Setup
+Update your requirements.txt to include the specific versions required for the 2026 unified SDK architecture.
+### requirements.txt
+```text
+# Core Frameworks
+langchain>=1.2.15
+langchain-google-genai>=4.2.2
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+pydantic>=2.7.0
+
+# Cloud & Utilities
+google-cloud-storage>=2.15.0
+python-dotenv>=1.0.1
+
+```
+## Phase 2: Core itext2kg Code Updates
+We will transition the existing OpenAI/VertexAI legacy code to the **Gemini 3.1** unified interface.
+### 1. itext2kg/itext2kg.py
+**Goal:** Initialize the "Thinking" model (Gemini 3.1 Pro) for complex graph extraction.
+```python
+import os
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+class iText2KG:
+    def __init__(self, model="gemini-3.1-pro-preview", temperature=0):
+        # The 4.x SDK uses Vertex AI when project/location are provided
+        self.llm = ChatGoogleGenerativeAI(
+            model=model,
+            temperature=temperature,
+            gcp_project=os.getenv("GOOGLE_CLOUD_PROJECT"),
+            location=os.getenv("GOOGLE_CLOUD_REGION", "us-central1"),
+            transport="rest" 
+        )
+
+```
+### 2. itext2kg/embeddings.py
+**Goal:** Upgrade to the latest semantic engine.
+```python
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+
+class EmbeddingsManager:
+    def __init__(self):
+        # Gemini Embedding 2 (text-embedding-005) is the 2026 standard
+        self.embeddings = GoogleGenerativeAIEmbeddings(
+            model="models/text-embedding-005"
+        )
+
+```
+## Phase 3: FastAPI Enterprise Application
+### 1. app/schemas/extractknowledge_schema.py
+```python
+from pydantic import BaseModel, Field
+
+class ExtractionRequest(BaseModel):
+    input_bucket: str = Field(..., description="Source GCS bucket")
+    input_path: str = Field(..., description="Path to PDF/Text in bucket")
+    output_bucket: str = Field(..., description="Target GCS bucket")
+    output_path: str = Field(..., description="Destination filename (.json)")
+
+class ExtractionResponse(BaseModel):
+    status: str = "success"
+    output_uri: str
+
+```
+### 2. app/services/extractknowledge_services.py
+```python
+import json
+from google.cloud import storage
+from itext2kg.itext2kg import iText2KG
+
+class ExtractionService:
+    def __init__(self):
+        self.storage_client = storage.Client()
+        self.engine = iText2KG()
+
+    async def process_workflow(self, req: dict):
+        # 1. Download
+        bucket = self.storage_client.bucket(req.input_bucket)
+        content = bucket.blob(req.input_path).download_as_text()
+
+        # 2. Extract KG
+        graph_data = self.engine.build_graph(content)
+
+        # 3. Upload JSON
+        out_bucket = self.storage_client.bucket(req.output_bucket)
+        out_blob = out_bucket.blob(req.output_path)
+        out_blob.upload_from_string(json.dumps(graph_data), content_type='application/json')
+        
+        return f"gs://{req.output_bucket}/{req.output_path}"
+
+```
+### 3. app/routes/extractknowledge_routes.py
+```python
+from fastapi import APIRouter, HTTPException
+from app.schemas.extractknowledge_schema import ExtractionRequest, ExtractionResponse
+from app.services.extractknowledge_services import ExtractionService
+
+router = APIRouter()
+service = ExtractionService()
+
+@router.post("/v1/extractknowledge", response_model=ExtractionResponse)
+async def extract_kg(payload: ExtractionRequest):
+    try:
+        uri = await service.process_workflow(payload)
+        return ExtractionResponse(output_uri=uri)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+```
+## Phase 4: Local Testing & Deployment
+### Dockerfile
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+ENV PORT 8080
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+
+```
+### Step-by-Step Local Test (ADC)
+ 1. **Login:** gcloud auth application-default login
+ 2. **Build:** docker build -t itext2kg-api .
+ 3. **Run:** ```bash
+   docker run -p 8080:8080 
+   -v $HOME/.config/gcloud/application_default_credentials.json:/tmp/keys/adc.json:ro 
+   -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/keys/adc.json 
+   -e GOOGLE_CLOUD_PROJECT="your-project-id" 
+   itext2kg-api
+   ```
+   
+   ```
+ 4. **Verify:** ```bash
+   curl -X POST http://localhost:8080/v1/extractknowledge 
+   -d '{"input_bucket":"my-docs","input_path":"test.txt","output_bucket":"my-graphs","output_path":"kg.json"}' 
+   -H "Content-Type: application/json"
+   ```
+   
+   
+   ```
 
 
 # ATOM: AdapTive and OptiMized Dynamic Temporal Knowledge Graph Construction Using LLMs
