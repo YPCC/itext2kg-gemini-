@@ -1,3 +1,96 @@
+
+WIP:
+---
+To align with  enterprise strategy consolidated plan to move to **Gemini 3.* ** (the stable production version series) using **LangChain 1.2+** and the latest **langchain-google-genai 4.2.x** integration .
+### Goal & Strategy
+ * **Model:** Standardize on gemini-3.0 pro or gemini-3.0-flash for state-of-the-art reasoning and multimodal efficiency.
+
+ * **SDK Consolidation:** Move away from langchain-google-vertexai (deprecated for Gemini chat) to the unified langchain-google-genai package which now handles both AI Studio and Vertex AI backends.
+ * **Version Pinning:** Ensure langchain >= 1.2.x and langchain-google-genai >= 4.0.0 (current stable 4.2.2).
+
+* **strip down unnecessary langchain modules** 
+
+### Files to be Updated
+| File Name | Intended Change / Logic Update |
+|---|---|
+| **requirements.txt** | **Update versions:** Remove langchain-openai and langchain-google-vertexai. 
+Add langchain>=1.2.15, langchain-google-genai>=4.2.2, and google-cloud-storage. |
+| **app/services/extractknowledge_services.py** | **Class Migration:** Replace ChatVertexAI with ChatGoogleGenerativeAI. 
+**Logic:** Explicitly pass gcp_project and location to the constructor to trigger the Vertex AI backend instead of the public Gemini API. |
+| **itext2kg/itext2kg.py** | **Model Update:** Change model string to gemini-3.1-pro-preview. 
+**Parameter Logic:** Update max_output_tokens or structured_output calls to match the new SDK's .with_structured_output() syntax (Standard in LangChain 1.2+). |
+| **itext2kg/embeddings.py** | **Migration:** Change VertexAIEmbeddings to GoogleGenerativeAIEmbeddings. 
+**Model:** Use the new state-of-the-art text-embedding-005 (released with Gemini 3). |
+
+### Implementation Details for Strategy Alignment
+#### 1. The Unified Vertex AI Backend (Services)
+In extractknowledge_services.py, the initialization must now look like this to remain compliant with the 4.0.0+ "Consolidated SDK" architecture:
+```python
+from langchain_google_genai import ChatGoogleGenerativeAI
+import os
+
+# The new unified class handles Vertex AI when project/location are provided
+self.llm = ChatGoogleGenerativeAI(
+    model="gemini-3.1-pro-preview",
+    gcp_project=os.getenv("GOOGLE_CLOUD_PROJECT"),
+    location=os.getenv("GOOGLE_CLOUD_REGION", "us-central1"),
+    temperature=0.1,
+    # Gemini 3 specific: Thinking level/Reasoning can be toggled here if supported
+)
+
+```
+#### 2. Schema Validation (Schema)
+In extractknowledge_schema.py, ensure Pydantic v2 (required by LangChain 1.2+) is used for strict validation of your Cloud Storage paths.
+```python
+from pydantic import BaseModel, Field, field_validator
+
+class ExtractionRequest(BaseModel):
+    input_bucket: str = Field(..., pattern=r"^[a-z0-9_.-]+$")
+    input_path: str
+    output_bucket: str
+    output_path: str
+
+    @field_validator('input_path', 'output_path')
+    @classmethod
+    def validate_extension(cls, v: str):
+        if not v.endswith(('.pdf', '.txt', '.json')):
+            raise ValueError('File must be PDF, TXT or JSON')
+        return v
+
+```
+#### 3. Docker & Local ADC Strategy
+To test locally using **Application Default Credentials (ADC)**, your Docker setup must mount the local credential file to the path expected by the Google SDK.
+**Updated Dockerfile:**
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+# Expose Port for Cloud Run
+EXPOSE 8080
+ENV PORT 8080
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+
+```
+**Local Testing Commands:**
+ 1. **Generate Credentials:** gcloud auth application-default login
+ 2. **Build:** docker build -t kg-extractor .
+ 3. **Run with Volume Mount:**
+   ```bash
+   docker run -p 8080:8080 \
+     -v $HOME/.config/gcloud/application_default_credentials.json:/tmp/keys/google_creds.json:ro \
+     -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/keys/google_creds.json \
+     -e GOOGLE_CLOUD_PROJECT="your-project-id" \
+     kg-extractor
+   
+   ```
+Does the itext2kg logic require specific Gemini 3.1 "thinking" features (like controlled reasoning depth), or is the standard response output sufficient for your graph construction?
+
+
+
+
+
 # ATOM: AdapTive and OptiMized Dynamic Temporal Knowledge Graph Construction Using LLMs
 
 iText2KG is now ATOM. ATOM is a few-shot and scalable approach for building and continuously updating Temporal Knowledge Graphs (TKGs) from unstructured texts.
