@@ -13,14 +13,10 @@ To align with  enterprise strategy consolidated plan to move to **Gemini 3.* ** 
 ### Files to be Updated
 | File Name | Intended Change / Logic Update |
 |---|---|
-| **requirements.txt** | **Update versions:** Remove langchain-openai and langchain-google-vertexai. 
-Add langchain>=1.2.15, langchain-google-genai>=4.2.2, and google-cloud-storage. |
-| **app/services/extractknowledge_services.py** | **Class Migration:** Replace ChatVertexAI with ChatGoogleGenerativeAI. 
-**Logic:** Explicitly pass gcp_project and location to the constructor to trigger the Vertex AI backend instead of the public Gemini API. |
-| **itext2kg/itext2kg.py** | **Model Update:** Change model string to gemini-3.1-pro-preview. 
-**Parameter Logic:** Update max_output_tokens or structured_output calls to match the new SDK's .with_structured_output() syntax (Standard in LangChain 1.2+). |
-| **itext2kg/embeddings.py** | **Migration:** Change VertexAIEmbeddings to GoogleGenerativeAIEmbeddings. 
-**Model:** Use the new state-of-the-art text-embedding-005 (released with Gemini 3). |
+| **requirements.txt** | **Update versions:** Remove langchain-openai and langchain-google-vertexai.<br> Add langchain>=1.2.15, langchain-google-genai>=4.2.2, and google-cloud-storage. |
+| **app/services/extractknowledge_services.py** | **Class Migration:** Replace ChatVertexAI with ChatGoogleGenerativeAI.<br> **Logic:** Explicitly pass gcp_project and location to the constructor to trigger the Vertex AI backend instead of the public Gemini API. |
+| **itext2kg/itext2kg.py** | **Model Update:** Change model string to gemini-3.1-pro-preview.<br> **Parameter Logic:** Update max_output_tokens or structured_output calls to match the new SDK's .with_structured_output() syntax (Standard in LangChain 1.2+). |
+| **itext2kg/embeddings.py** | **Migration:** Change VertexAIEmbeddings to GoogleGenerativeAIEmbeddings.<br> **Model:** Use the new state-of-the-art text-embedding-005 (released with Gemini 3). |
 
 ### Implementation Details for Strategy Alignment
 #### 1. The Unified Vertex AI Backend (Services)
@@ -85,7 +81,9 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
      kg-extractor
    
    ```
-Does the itext2kg logic require specific Gemini 3.1 "thinking" features (like controlled reasoning depth), or is the standard response output sufficient for your graph construction?
+
+decide: 
+Does the itext2kg logic require specific Gemini 3.1 "thinking" features (like controlled reasoning depth), or is the standard response output sufficient for  graph construction?
 
 
 
